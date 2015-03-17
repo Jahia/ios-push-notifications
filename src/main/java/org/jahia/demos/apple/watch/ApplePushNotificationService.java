@@ -16,6 +16,17 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
 
     PushManager<SimpleApnsPushNotification> pushManager;
 
+    private String certificatePath;
+    private String certificatePassword;
+
+    public void setCertificatePath(String certificatePath) {
+        this.certificatePath = certificatePath;
+    }
+
+    public void setCertificatePassword(String certificatePassword) {
+        this.certificatePassword = certificatePassword;
+    }
+
     private class MyRejectedNotificationListener implements RejectedNotificationListener<SimpleApnsPushNotification> {
 
         @Override
@@ -60,12 +71,12 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
     @Override
     public void afterPropertiesSet() throws Exception {
 
-        InputStream certInputStream = this.getClass().getClassLoader().getResourceAsStream("aps-development.p12");
+        InputStream certInputStream = this.getClass().getClassLoader().getResourceAsStream(certificatePath);
 
         pushManager =
                 new PushManager<SimpleApnsPushNotification>(
                         ApnsEnvironment.getSandboxEnvironment(),
-                        SSLContextUtil.createDefaultSSLContext(certInputStream, "honor522{statistically"),
+                        SSLContextUtil.createDefaultSSLContext(certInputStream, certificatePassword),
                         null, // Optional: custom event loop group
                         null, // Optional: custom ExecutorService for calling listeners
                         null, // Optional: custom BlockingQueue implementation

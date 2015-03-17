@@ -16,5 +16,7 @@
     </bean>
 
     <bean id="applePushNotificationService" class="org.jahia.demos.apple.watch.ApplePushNotificationService">
+        <property name="certificatePath" value="aps-development.p12" />
+        <property name="certificatePassword" value="honor522{statistically" />
     </bean>
 </beans>
