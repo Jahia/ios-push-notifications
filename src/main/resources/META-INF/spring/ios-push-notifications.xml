@@ -7,7 +7,7 @@
         <property name="globalRulesObject">
             <map>
                 <entry key="ruleService">
-                    <bean class="org.jahia.demos.apple.watch.RuleService">
+                    <bean class="org.jahia.modules.ios.notifications.RuleService">
                         <property name="applePushNotificationService" ref="applePushNotificationService" />
                     </bean>
                 </entry>
@@ -15,8 +15,27 @@
         </property>
     </bean>
 
-    <bean id="applePushNotificationService" class="org.jahia.demos.apple.watch.ApplePushNotificationService">
-        <property name="certificatePath" value="aps-development.p12" />
-        <property name="certificatePassword" value="honor522{statistically" />
+    <bean id="applePushNotificationService" class="org.jahia.modules.ios.notifications.ApplePushNotificationService">
+        <property name="sandBoxCertificatePath" value="aps-development.p12" />
+        <property name="sandBoxCertificatePassword" value="honor522{statistically" />
+        <property name="productionCertificatePath" value="aps-production.p12" />
+        <property name="productionCertificatePassword" value="honor522{statistically" />
+        <property name="sandboxAPNUsed" value="${iosPushNotificationSandboxUsed:false}" />
     </bean>
+
+    <bean class="org.jahia.modules.ios.notifications.RegisterTokenAction">
+        <property name="name" value="registerToken"/>
+        <property name="requireAuthenticatedUser" value="true"/>
+    </bean>
+
+    <bean class="org.jahia.modules.ios.notifications.BlockUserAction">
+        <property name="name" value="blockUser"/>
+        <property name="requireAuthenticatedUser" value="true"/>
+    </bean>
+
+    <bean class="org.jahia.modules.ios.notifications.GetCurrentUserPathAction">
+        <property name="name" value="userPath"/>
+        <property name="requireAuthenticatedUser" value="true"/>
+    </bean>
+
 </beans>

@@ -1,5 +1,5 @@
 ###############################################################################
-package org.jahia.demos.apple.watch
+package org.jahia.modules.ios.notifications
 
 #list any import classes here.
 import org.jahia.services.content.rules.*
@@ -20,5 +20,5 @@ rule "A post is created - send an iOS notification"
 		A new node is created
             - it has the type jnt:post
     then
-        Send iOS notification about node with "New post created"
+        Send iOS notification to all users about node with "New post created"
 end
