@@ -13,21 +13,22 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Created by loom on 09.04.15.
+ * Created by loom on 17.04.15.
  */
-public class BlockUserAction extends Action {
+public class MarkAsSpamAction extends Action {
 
     private transient static Logger logger = org.slf4j.LoggerFactory.getLogger(BlockUserAction.class);
 
     @Override
     public ActionResult doExecute(HttpServletRequest httpServletRequest, RenderContext renderContext, Resource resource, JCRSessionWrapper jcrSessionWrapper, Map<String, List<String>> map, URLResolver urlResolver) throws Exception {
 
-        String userName = httpServletRequest.getParameter("userName");
+        String nodeIdentifier = httpServletRequest.getParameter("nodeIdentifier");
 
-        logger.info("Blocking user " + userName);
+        logger.info("Marking node "+nodeIdentifier+" as spam");
 
         // @todo add permission check
 
         return null;
     }
+
 }

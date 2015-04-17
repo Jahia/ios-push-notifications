@@ -33,6 +33,11 @@
         <property name="requireAuthenticatedUser" value="true"/>
     </bean>
 
+    <bean class="org.jahia.modules.ios.notifications.MarkAsSpamAction">
+        <property name="name" value="markAsSpam"/>
+        <property name="requireAuthenticatedUser" value="true"/>
+    </bean>
+
     <bean class="org.jahia.modules.ios.notifications.GetCurrentUserPathAction">
         <property name="name" value="userPath"/>
         <property name="requireAuthenticatedUser" value="true"/>

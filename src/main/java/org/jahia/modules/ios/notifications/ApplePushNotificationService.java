@@ -16,10 +16,7 @@ import javax.jcr.query.Query;
 import javax.jcr.query.QueryResult;
 import javax.net.ssl.SSLHandshakeException;
 import java.io.InputStream;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Created by loom on 06.03.15.
@@ -143,14 +140,13 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
 
     }
 
-    public void sendNotification(String deviceToken, String alertBody) {
+    public void sendNotification(String deviceToken, JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
         try {
             final byte[] token = TokenUtil.tokenStringToByteArray(deviceToken);
 
-            final ApnsPayloadBuilder payloadBuilder = new ApnsPayloadBuilder();
+            logger.info("Preparing "+category+" notification for device token " + deviceToken + "...");
 
-            payloadBuilder.setAlertBody(alertBody);
-            payloadBuilder.setSoundFileName("ring-ring.aiff");
+            final ApnsPayloadBuilder payloadBuilder = buildPayload(node, category, alertTitle, alertBody, customKeys);
 
             final String payload = payloadBuilder.buildWithDefaultMaximumLength();
 
@@ -159,10 +155,28 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
             ie.printStackTrace();
         } catch (MalformedTokenStringException e) {
             e.printStackTrace();
+        } catch (RepositoryException e) {
+            e.printStackTrace();
         }
     }
 
-    public void sendNotificationToAll(String alertBody) {
+    private ApnsPayloadBuilder buildPayload(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String, Object> customKeys) throws RepositoryException {
+        final ApnsPayloadBuilder payloadBuilder = new ApnsPayloadBuilder();
+
+        payloadBuilder.setCategoryName(category);
+        payloadBuilder.setAlertTitle(alertTitle);
+        payloadBuilder.setAlertBody(alertBody);
+        payloadBuilder.setSoundFileName("ring-ring.aiff");
+        payloadBuilder.addCustomProperty("nodeIdentifier", node.getIdentifier());
+        if (customKeys != null) {
+            for (Map.Entry<String, Object> customKeyEntry : customKeys.entrySet()) {
+                payloadBuilder.addCustomProperty(customKeyEntry.getKey(), customKeyEntry.getValue());
+            }
+        }
+        return payloadBuilder;
+    }
+
+    public void sendNotificationToAll(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
         try {
             final Set<String> deviceTokens = new LinkedHashSet<String>();
             JCRTemplate.getInstance().doExecuteWithSystemSession(new JCRCallback<Object>() {
@@ -185,12 +199,11 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
                 }
             });
             for (String deviceToken : deviceTokens) {
+
+                logger.info("Preparing "+category+" notification for device token " + deviceToken + "...");
                 final byte[] token = TokenUtil.tokenStringToByteArray(deviceToken);
 
-                final ApnsPayloadBuilder payloadBuilder = new ApnsPayloadBuilder();
-
-                payloadBuilder.setAlertBody(alertBody);
-                payloadBuilder.setSoundFileName("ring-ring.aiff");
+                final ApnsPayloadBuilder payloadBuilder = buildPayload(node, category, alertTitle, alertBody, customKeys);
 
                 final String payload = payloadBuilder.buildWithDefaultMaximumLength();
 

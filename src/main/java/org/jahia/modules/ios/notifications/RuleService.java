@@ -20,17 +20,17 @@ public class RuleService {
         this.applePushNotificationService = applePushNotificationService;
     }
 
-    public void sendNotification(AddedNodeFact nodeFact, String notificationText, KnowledgeHelper drools)
+    public void sendNotification(AddedNodeFact nodeFact, String category, String alertTitle, String alertBody, KnowledgeHelper drools)
             throws RepositoryException {
         final JahiaUser jahiaUser = nodeFact.getNode().getSession().getUser();
         for (String deviceToken : applePushNotificationService.getUserDeviceTokens(jahiaUser)) {
-            applePushNotificationService.sendNotification(deviceToken, notificationText);
+            applePushNotificationService.sendNotification(deviceToken, nodeFact.getNode(), category, alertTitle, alertBody, null);
         }
     }
 
-    public void sendNotificationToAll(AddedNodeFact nodeFact, String notificationText, KnowledgeHelper drools)
+    public void sendNotificationToAll(AddedNodeFact nodeFact, String category, String alertTitle, String alertBody, KnowledgeHelper drools)
             throws RepositoryException {
-        applePushNotificationService.sendNotificationToAll(notificationText);
+        applePushNotificationService.sendNotificationToAll(nodeFact.getNode(), category, alertTitle, alertBody, null);
     }
 
 }
