@@ -16,6 +16,8 @@ import javax.jcr.query.Query;
 import javax.jcr.query.QueryResult;
 import javax.net.ssl.SSLHandshakeException;
 import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.*;
 
 /**
@@ -105,6 +107,13 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
     @Override
     public void afterPropertiesSet() throws Exception {
 
+        try {
+            InetAddress.getByName("www.apple.com");
+        } catch (UnknownHostException uhe) {
+            logger.warn("Network doesn't seem reacheable, not starting push manager");
+            return;
+        }
+
         if (sandboxAPNUsed) {
             logger.info("Using sandbox Apple Push Notification service");
             InputStream certInputStream = this.getClass().getClassLoader().getResourceAsStream(sandBoxCertificatePath);
@@ -140,7 +149,18 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
 
     }
 
+    public boolean isPushManagerAvailable(String message) {
+        if (pushManager == null) {
+            logger.warn("Push manager not available: " + message);
+            return false;
+        }
+        return true;
+    }
+
     public void sendNotification(String deviceToken, JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
+        if (!isPushManagerAvailable("not sending notification")) {
+            return;
+        }
         try {
             final byte[] token = TokenUtil.tokenStringToByteArray(deviceToken);
 
@@ -177,6 +197,9 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
     }
 
     public void sendNotificationToAll(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
+        if (!isPushManagerAvailable("not sending notifications to all devices")) {
+            return;
+        }
         try {
             final Set<String> deviceTokens = new LinkedHashSet<String>();
             JCRTemplate.getInstance().doExecuteWithSystemSession(new JCRCallback<Object>() {
@@ -220,7 +243,11 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
 
     @Override
     public void destroy() throws Exception {
-        pushManager.shutdown();
+        if (pushManager != null) {
+            pushManager.shutdown();
+        } else {
+            logger.warn("Push manager wasn't started, nothing to shutdown.");
+        }
     }
 
     public Set<String> getUserDeviceTokens(final JahiaUser jahiaUser) {
