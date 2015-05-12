@@ -80,7 +80,6 @@
         <groupId>org.jahia.modules</groupId>
         <version>7.0.0.5-SNAPSHOT</version>
     </parent>
-    <groupId>org.jahia.modules</groupId>
     <artifactId>ios-push-notifications</artifactId>
     <name>iOS Push Notifications</name>
     <version>1.0-SNAPSHOT</version>    
