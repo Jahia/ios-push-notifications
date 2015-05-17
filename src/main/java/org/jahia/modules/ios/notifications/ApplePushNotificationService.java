@@ -3,7 +3,10 @@ package org.jahia.modules.ios.notifications;
 import com.relayrides.pushy.apns.*;
 import com.relayrides.pushy.apns.util.*;
 import org.jahia.services.content.*;
+import org.jahia.services.usermanager.JahiaGroup;
+import org.jahia.services.usermanager.JahiaGroupManagerService;
 import org.jahia.services.usermanager.JahiaUser;
+import org.jahia.services.usermanager.JahiaUserManagerService;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
@@ -18,6 +21,7 @@ import javax.net.ssl.SSLHandshakeException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.security.Principal;
 import java.util.*;
 
 /**
@@ -36,6 +40,8 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
     private String productionCertificatePath;
     private String productionCertificatePassword;
     private boolean sandboxAPNUsed = true;
+    private JahiaUserManagerService jahiaUserManagerService;
+    private JahiaGroupManagerService jahiaGroupManagerService;
 
     public void setSandBoxCertificatePath(String sandBoxCertificatePath) {
         this.sandBoxCertificatePath = sandBoxCertificatePath;
@@ -55,6 +61,14 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
 
     public void setSandboxAPNUsed(boolean sandboxAPNUsed) {
         this.sandboxAPNUsed = sandboxAPNUsed;
+    }
+
+    public void setJahiaUserManagerService(JahiaUserManagerService jahiaUserManagerService) {
+        this.jahiaUserManagerService = jahiaUserManagerService;
+    }
+
+    public void setJahiaGroupManagerService(JahiaGroupManagerService jahiaGroupManagerService) {
+        this.jahiaGroupManagerService = jahiaGroupManagerService;
     }
 
     private class MyRejectedNotificationListener implements RejectedNotificationListener<SimpleApnsPushNotification> {
@@ -188,12 +202,55 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
         payloadBuilder.setAlertBody(alertBody);
         payloadBuilder.setSoundFileName("ring-ring.aiff");
         payloadBuilder.addCustomProperty("nodeIdentifier", node.getIdentifier());
+        payloadBuilder.addCustomProperty("nodePath", node.getPath());
         if (customKeys != null) {
             for (Map.Entry<String, Object> customKeyEntry : customKeys.entrySet()) {
                 payloadBuilder.addCustomProperty(customKeyEntry.getKey(), customKeyEntry.getValue());
             }
         }
         return payloadBuilder;
+    }
+
+    public void sendNotificationToTaskCandidates(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
+        try {
+            if (!node.isNodeType("jnt:task")) {
+                logger.error("Expected jnt:task node type but got " + node.getPrimaryNodeType() + ", will not send notification");
+                return;
+            }
+            Set<String> targetDeviceTokens = new HashSet<String>();
+            for (JCRValueWrapper valueWrapper : node.getProperty("candidates").getValues()) {
+                String candidate = valueWrapper.getString();
+                if (candidate.startsWith("u:")) {
+                    JahiaUser candidateUser = jahiaUserManagerService.lookupUser(candidate.substring("u:".length()));
+                    if (candidateUser != null) {
+                        Set<String> candidateUserDeviceTokens = getUserDeviceTokens(candidateUser);
+                        if (candidateUserDeviceTokens != null && candidateUserDeviceTokens.size() > 0) {
+                            targetDeviceTokens.addAll(candidateUserDeviceTokens);
+                        }
+                    }
+                } else if (candidate.startsWith("g:")) {
+                    JahiaGroup candidateGroup = jahiaGroupManagerService.lookupGroup(candidate.substring("g:".length()));
+                    if (candidateGroup != null) {
+                        Set<Principal> groupMembers = candidateGroup.getRecursiveUserMembers();
+                        for (Principal groupMember : groupMembers) {
+                            if (groupMember instanceof JahiaUser) {
+                                Set<String> candidateUserDeviceTokens = getUserDeviceTokens((JahiaUser) groupMember);
+                                if (candidateUserDeviceTokens != null && candidateUserDeviceTokens.size() > 0) {
+                                    targetDeviceTokens.addAll(candidateUserDeviceTokens);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // we now have all the device tokens, let's send the notifications
+            for (String targetDeviceToken : targetDeviceTokens) {
+                sendNotification(targetDeviceToken, node, category, alertTitle, alertBody, customKeys);
+            }
+
+        } catch (RepositoryException e) {
+            logger.error("Error sending notification to all task candidates");
+        }
     }
 
     public void sendNotificationToAll(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
@@ -266,7 +323,7 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
                             JCRPropertyWrapper deviceTokensProperty = deviceTokensNode.getProperty(ApplePushNotificationService.IOS_DEVICE_TOKENS_USER_PROPERTY);
                             JCRValueWrapper[] deviceTokensValues = deviceTokensProperty.getValues();
                             for (JCRValueWrapper jcrValueWrapper : deviceTokensValues) {
-                                deviceTokens.add(jcrValueWrapper.toString());
+                                deviceTokens.add(jcrValueWrapper.getString());
                             }
                         }
                     }

@@ -21,6 +21,8 @@
         <property name="productionCertificatePath" value="aps-production.p12" />
         <property name="productionCertificatePassword" value="honor522{statistically" />
         <property name="sandboxAPNUsed" value="${iosPushNotificationSandboxUsed:true}" />
+        <property name="jahiaUserManagerService" ref="JahiaUserManagerService" />
+        <property name="jahiaGroupManagerService" ref="JahiaGroupManagerService" />
     </bean>
 
     <bean class="org.jahia.modules.ios.notifications.RegisterTokenAction">

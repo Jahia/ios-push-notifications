@@ -33,4 +33,9 @@ public class RuleService {
         applePushNotificationService.sendNotificationToAll(nodeFact.getNode(), category, alertTitle, alertBody, null);
     }
 
+    public void sendNotificationToTaskCandidates(AddedNodeFact nodeFact, String category, String alertTitle, String alertBody, KnowledgeHelper drools)
+            throws RepositoryException {
+        applePushNotificationService.sendNotificationToTaskCandidates(nodeFact.getNode(), category, alertTitle, alertBody, null);
+    }
+
 }

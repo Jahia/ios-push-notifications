@@ -22,3 +22,12 @@ rule "A post is created - send an iOS notification"
     then
         Send iOS notification to all users about node with category "newPost" title "New post created" and body node.getNode().getProperty("jcr:title").getString()
 end
+
+rule "A task is created - send an iOS notification"
+    salience 100
+    when
+		A new node is created
+            - it has the type jnt:task
+    then
+        Send iOS notification to all candidates about node with category "newTask" title "New task created" and body node.getNode().getProperty("jcr:title").getString()
+end
