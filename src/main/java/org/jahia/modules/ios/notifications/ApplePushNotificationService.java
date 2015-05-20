@@ -2,11 +2,17 @@ package org.jahia.modules.ios.notifications;
 
 import com.relayrides.pushy.apns.*;
 import com.relayrides.pushy.apns.util.*;
+import org.apache.commons.lang.StringUtils;
+import org.jahia.registries.ServicesRegistry;
 import org.jahia.services.content.*;
+import org.jahia.services.content.decorator.JCRSiteNode;
 import org.jahia.services.usermanager.JahiaGroup;
 import org.jahia.services.usermanager.JahiaGroupManagerService;
 import org.jahia.services.usermanager.JahiaUser;
 import org.jahia.services.usermanager.JahiaUserManagerService;
+import org.jahia.utils.LanguageCodeConverters;
+import org.jahia.utils.Patterns;
+import org.jahia.utils.i18n.Messages;
 import org.slf4j.Logger;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
@@ -23,16 +29,17 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.security.Principal;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Created by loom on 06.03.15.
  */
 public class ApplePushNotificationService implements InitializingBean, DisposableBean {
 
-    private transient static Logger logger = org.slf4j.LoggerFactory.getLogger(ApplePushNotificationService.class);
-
     public static final String IOS_DEVICE_TOKENS_USER_NODE = "iOSDeviceTokens";
     public static final String IOS_DEVICE_TOKENS_USER_PROPERTY = "j:deviceTokens";
+    private transient static Logger logger = org.slf4j.LoggerFactory.getLogger(ApplePushNotificationService.class);
     PushManager<SimpleApnsPushNotification> pushManager;
 
     private String sandBoxCertificatePath;
@@ -42,6 +49,8 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
     private boolean sandboxAPNUsed = true;
     private JahiaUserManagerService jahiaUserManagerService;
     private JahiaGroupManagerService jahiaGroupManagerService;
+    private String macroRegexp = "##([a-zA-Z0-9_]+)(\\(([^\"#]*)(\\s*,\\s*[^\"#]*)*\\))?##";
+    private Pattern macroPattern = null;
 
     public void setSandBoxCertificatePath(String sandBoxCertificatePath) {
         this.sandBoxCertificatePath = sandBoxCertificatePath;
@@ -71,55 +80,16 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
         this.jahiaGroupManagerService = jahiaGroupManagerService;
     }
 
-    private class MyRejectedNotificationListener implements RejectedNotificationListener<SimpleApnsPushNotification> {
-
-        @Override
-        public void handleRejectedNotification(
-                final PushManager<? extends SimpleApnsPushNotification> pushManager,
-                final SimpleApnsPushNotification notification,
-                final RejectedNotificationReason reason) {
-
-            logger.error(notification + " was rejected with rejection reason " + reason);
-            if (reason.getErrorCode() == RejectedNotificationReason.INVALID_TOKEN.getErrorCode()) {
-                deleteInvalidToken(TokenUtil.tokenBytesToString(notification.getToken()));
-            }
-        }
+    public void setMacroRegexp(String macroRegexp) {
+        this.macroRegexp = macroRegexp;
     }
-
-    private class MyFailedConnectionListener implements FailedConnectionListener<SimpleApnsPushNotification> {
-
-        @Override
-        public void handleFailedConnection(
-                final PushManager<? extends SimpleApnsPushNotification> pushManager,
-                final Throwable cause) {
-
-            logger.error("Failed connection:", cause);
-            if (cause instanceof SSLHandshakeException) {
-                // This is probably a permanent failure, and we should shut down
-                // the PushManager.
-            }
-        }
-    }
-
-    private class MyExpiredTokenListener implements ExpiredTokenListener<SimpleApnsPushNotification> {
-
-        @Override
-        public void handleExpiredTokens(
-                final PushManager<? extends SimpleApnsPushNotification> pushManager,
-                final Collection<ExpiredToken> expiredTokens) {
-
-            for (final ExpiredToken expiredToken : expiredTokens) {
-                // Stop sending push notifications to each expired token if the expiration
-                // time is after the last time the app registered that token.
-                logger.warn("Expired token:", expiredToken.toString());
-                deleteInvalidToken(TokenUtil.tokenBytesToString(expiredToken.getToken()));
-            }
-        }
-    }
-
 
     @Override
     public void afterPropertiesSet() throws Exception {
+
+        if (macroRegexp != null) {
+            macroPattern = Pattern.compile(macroRegexp);
+        }
 
         try {
             InetAddress.getByName("www.apple.com");
@@ -171,14 +141,54 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
         return true;
     }
 
-    public void sendNotification(String deviceToken, JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
+    public String interpolateResourceBundleMacro(JCRNodeWrapper node, String input, String languageCode) {
+        String output = input;
+        if (input.contains("##resourceBundle(")) {
+            JCRSessionWrapper session = null;
+            try {
+                session = node.getSession();
+            } catch (RepositoryException e) {
+                logger.warn("Error retrieving session for node {}. Cause: {}", node.getPath(), e);
+            }
+            Matcher macroMatcher = macroPattern.matcher(input);
+            while (macroMatcher.find()) {
+                String macroName = macroMatcher.group(1);
+                String macroRBKey = macroMatcher.group(3);
+                String[] params = Patterns.COMMA.split(macroRBKey);
+                Locale locale = LanguageCodeConverters.languageCodeToLocale(languageCode);
+                String macroResult = null;
+                try {
+                    JCRSiteNode site = node.getResolveSite();
+
+                    try {
+                        macroResult = Messages.get(params.length > 1 ? params[1] : null, ServicesRegistry.getInstance().getJahiaTemplateManagerService().getTemplatePackageById(
+                                site.getTemplatePackageName()), params[0], locale);
+                    } catch (Exception e) {
+                        // ignore
+                    }
+                } catch (RepositoryException e) {
+                    logger.warn("Unable to resolve the site for node {}. Cause: {}", node.getPath(),
+                            e.getMessage());
+                }
+
+                if (macroResult != null) {
+                    output = StringUtils.replace(output, macroMatcher.group(), macroResult);
+                }
+            }
+            return output;
+        } else {
+            return input;
+        }
+    }
+
+    public void sendNotification(String deviceToken, JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String, Object> customKeys) {
         if (!isPushManagerAvailable("not sending notification")) {
             return;
         }
         try {
             final byte[] token = TokenUtil.tokenStringToByteArray(deviceToken);
 
-            logger.info("Preparing "+category+" notification for device token " + deviceToken + "...");
+            logger.info("Preparing " + category + " notification for device token " + deviceToken + "...");
 
             final ApnsPayloadBuilder payloadBuilder = buildPayload(node, category, alertTitle, alertBody, customKeys);
 
@@ -211,21 +221,26 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
         return payloadBuilder;
     }
 
-    public void sendNotificationToTaskCandidates(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
+    public void sendNotificationToTaskCandidates(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String, Object> customKeys) {
         try {
             if (!node.isNodeType("jnt:task")) {
                 logger.error("Expected jnt:task node type but got " + node.getPrimaryNodeType() + ", will not send notification");
                 return;
             }
             Set<String> targetDeviceTokens = new HashSet<String>();
+            Map<String, String> deviceTokensAndLanguages = new HashMap<String, String>();
             for (JCRValueWrapper valueWrapper : node.getProperty("candidates").getValues()) {
                 String candidate = valueWrapper.getString();
                 if (candidate.startsWith("u:")) {
                     JahiaUser candidateUser = jahiaUserManagerService.lookupUser(candidate.substring("u:".length()));
                     if (candidateUser != null) {
+                        String preferredLanguage = getUserPreferredLanguage(node, candidateUser);
                         Set<String> candidateUserDeviceTokens = getUserDeviceTokens(candidateUser);
                         if (candidateUserDeviceTokens != null && candidateUserDeviceTokens.size() > 0) {
                             targetDeviceTokens.addAll(candidateUserDeviceTokens);
+                            for (String candidateUserDeviceToken : candidateUserDeviceTokens) {
+                                deviceTokensAndLanguages.put(candidateUserDeviceToken, preferredLanguage);
+                            }
                         }
                     }
                 } else if (candidate.startsWith("g:")) {
@@ -234,9 +249,13 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
                         Set<Principal> groupMembers = candidateGroup.getRecursiveUserMembers();
                         for (Principal groupMember : groupMembers) {
                             if (groupMember instanceof JahiaUser) {
+                                String preferredLanguage = getUserPreferredLanguage(node, (JahiaUser) groupMember);
                                 Set<String> candidateUserDeviceTokens = getUserDeviceTokens((JahiaUser) groupMember);
                                 if (candidateUserDeviceTokens != null && candidateUserDeviceTokens.size() > 0) {
                                     targetDeviceTokens.addAll(candidateUserDeviceTokens);
+                                    for (String candidateUserDeviceToken : candidateUserDeviceTokens) {
+                                        deviceTokensAndLanguages.put(candidateUserDeviceToken, preferredLanguage);
+                                    }
                                 }
                             }
                         }
@@ -245,6 +264,8 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
             }
             // we now have all the device tokens, let's send the notifications
             for (String targetDeviceToken : targetDeviceTokens) {
+                String deviceTokenLanguage = deviceTokensAndLanguages.get(targetDeviceToken);
+                alertBody = interpolateResourceBundleMacro(node, alertBody, deviceTokenLanguage);
                 sendNotification(targetDeviceToken, node, category, alertTitle, alertBody, customKeys);
             }
 
@@ -253,7 +274,18 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
         }
     }
 
-    public void sendNotificationToAll(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String,Object> customKeys) {
+    private String getUserPreferredLanguage(JCRNodeWrapper node, JahiaUser candidateUser) throws RepositoryException {
+        String preferredLanguage = candidateUser.getProperty("preferredLanguage");
+        if (preferredLanguage == null) {
+            preferredLanguage = node.getResolveSite().getDefaultLanguage();
+        }
+        if (preferredLanguage == null) {
+            preferredLanguage = "en";
+        }
+        return preferredLanguage;
+    }
+
+    public void sendNotificationToAll(JCRNodeWrapper node, String category, String alertTitle, String alertBody, Map<String, Object> customKeys) {
         if (!isPushManagerAvailable("not sending notifications to all devices")) {
             return;
         }
@@ -262,7 +294,7 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
             JCRTemplate.getInstance().doExecuteWithSystemSession(new JCRCallback<Object>() {
                 @Override
                 public Object doInJCR(JCRSessionWrapper jcrSessionWrapper) throws RepositoryException {
-                    Query usersWithDeviceTokensQuery = jcrSessionWrapper.getWorkspace().getQueryManager().createQuery("SELECT * FROM [jnt:iOSDeviceTokens] as deviceTokens WHERE deviceTokens.["+IOS_DEVICE_TOKENS_USER_PROPERTY+"] IS NOT NULL", Query.JCR_SQL2);
+                    Query usersWithDeviceTokensQuery = jcrSessionWrapper.getWorkspace().getQueryManager().createQuery("SELECT * FROM [jnt:iOSDeviceTokens] as deviceTokens WHERE deviceTokens.[" + IOS_DEVICE_TOKENS_USER_PROPERTY + "] IS NOT NULL", Query.JCR_SQL2);
                     QueryResult queryResult = usersWithDeviceTokensQuery.execute();
 
                     NodeIterator usersWithDeviceTokensIterator = queryResult.getNodes();
@@ -280,7 +312,7 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
             });
             for (String deviceToken : deviceTokens) {
 
-                logger.info("Preparing "+category+" notification for device token " + deviceToken + "...");
+                logger.info("Preparing " + category + " notification for device token " + deviceToken + "...");
                 final byte[] token = TokenUtil.tokenStringToByteArray(deviceToken);
 
                 final ApnsPayloadBuilder payloadBuilder = buildPayload(node, category, alertTitle, alertBody, customKeys);
@@ -342,7 +374,7 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
             JCRTemplate.getInstance().doExecuteWithSystemSession(new JCRCallback<Object>() {
                 @Override
                 public Object doInJCR(JCRSessionWrapper jcrSessionWrapper) throws RepositoryException {
-                    Query usersWithDeviceTokensQuery = jcrSessionWrapper.getWorkspace().getQueryManager().createQuery("SELECT * FROM [jnt:iOSDeviceTokens] as deviceTokens WHERE deviceTokens.["+IOS_DEVICE_TOKENS_USER_PROPERTY+"]='" + invalidToken + "'", Query.JCR_SQL2);
+                    Query usersWithDeviceTokensQuery = jcrSessionWrapper.getWorkspace().getQueryManager().createQuery("SELECT * FROM [jnt:iOSDeviceTokens] as deviceTokens WHERE deviceTokens.[" + IOS_DEVICE_TOKENS_USER_PROPERTY + "]='" + invalidToken + "'", Query.JCR_SQL2);
                     QueryResult queryResult = usersWithDeviceTokensQuery.execute();
 
                     Set<String> deviceTokens = new LinkedHashSet<String>();
@@ -374,5 +406,51 @@ public class ApplePushNotificationService implements InitializingBean, Disposabl
             e.printStackTrace();
         }
 
+    }
+
+    private class MyRejectedNotificationListener implements RejectedNotificationListener<SimpleApnsPushNotification> {
+
+        @Override
+        public void handleRejectedNotification(
+                final PushManager<? extends SimpleApnsPushNotification> pushManager,
+                final SimpleApnsPushNotification notification,
+                final RejectedNotificationReason reason) {
+
+            logger.error(notification + " was rejected with rejection reason " + reason);
+            if (reason.getErrorCode() == RejectedNotificationReason.INVALID_TOKEN.getErrorCode()) {
+                deleteInvalidToken(TokenUtil.tokenBytesToString(notification.getToken()));
+            }
+        }
+    }
+
+    private class MyFailedConnectionListener implements FailedConnectionListener<SimpleApnsPushNotification> {
+
+        @Override
+        public void handleFailedConnection(
+                final PushManager<? extends SimpleApnsPushNotification> pushManager,
+                final Throwable cause) {
+
+            logger.error("Failed connection:", cause);
+            if (cause instanceof SSLHandshakeException) {
+                // This is probably a permanent failure, and we should shut down
+                // the PushManager.
+            }
+        }
+    }
+
+    private class MyExpiredTokenListener implements ExpiredTokenListener<SimpleApnsPushNotification> {
+
+        @Override
+        public void handleExpiredTokens(
+                final PushManager<? extends SimpleApnsPushNotification> pushManager,
+                final Collection<ExpiredToken> expiredTokens) {
+
+            for (final ExpiredToken expiredToken : expiredTokens) {
+                // Stop sending push notifications to each expired token if the expiration
+                // time is after the last time the app registered that token.
+                logger.warn("Expired token:", expiredToken.toString());
+                deleteInvalidToken(TokenUtil.tokenBytesToString(expiredToken.getToken()));
+            }
+        }
     }
 }

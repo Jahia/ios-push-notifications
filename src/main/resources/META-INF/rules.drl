@@ -29,5 +29,5 @@ rule "A task is created - send an iOS notification"
 		A new node is created
             - it has the type jnt:task
     then
-        Send iOS notification to all candidates about node with category "newTask" title "New task created" and body node.getNode().getDisplayableName()
+        Send iOS notification to all candidates about node with category "newTask" title "A new task was created" and body node.getNode().getDisplayableName()
 end
