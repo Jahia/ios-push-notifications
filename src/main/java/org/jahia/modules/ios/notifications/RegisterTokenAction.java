@@ -7,17 +7,25 @@ import org.jahia.services.render.RenderContext;
 import org.jahia.services.render.Resource;
 import org.jahia.services.render.URLResolver;
 import org.jahia.services.usermanager.JahiaUser;
+import org.slf4j.Logger;
 
 import javax.jcr.RepositoryException;
 import javax.servlet.http.HttpServletRequest;
-import java.util.*;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Created by loom on 09.04.15.
  */
 public class RegisterTokenAction extends Action {
+
+    private transient static Logger logger = org.slf4j.LoggerFactory.getLogger(RegisterTokenAction.class);
+
     @Override
     public ActionResult doExecute(HttpServletRequest httpServletRequest, RenderContext renderContext, Resource resource, JCRSessionWrapper jcrSessionWrapper, Map<String, List<String>> map, URLResolver urlResolver) throws Exception {
+
 
         final String deviceToken = httpServletRequest.getParameter("deviceToken");
         if (deviceToken == null || deviceToken.length() == 0) {
@@ -54,6 +62,7 @@ public class RegisterTokenAction extends Action {
                         deviceTokensNode.setProperty(ApplePushNotificationService.IOS_DEVICE_TOKENS_USER_PROPERTY, deviceTokens.toArray(new String[deviceTokens.size()]));
                     }
                     jcrSessionWrapper.save();
+                    logger.info("Successfully registered device token {} for user {}", deviceToken, jahiaUser);
                     return null;
                 }
             });

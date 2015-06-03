@@ -11,7 +11,7 @@ expander rules.dsl
 global User user
 global Service service
 global Logger logger
-global RuleService ruleService
+global RuleService notificationRuleService
 ###############################################################################
 
 rule "A post is created - send an iOS notification"
